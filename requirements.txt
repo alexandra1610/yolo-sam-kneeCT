@@ -1,0 +1,8 @@
+torch
+torchvision
+onnxruntime
+opencv-python
+numpy
+pillow
+huggingface_hub>=0.21.0
+onnxruntime-gpu
