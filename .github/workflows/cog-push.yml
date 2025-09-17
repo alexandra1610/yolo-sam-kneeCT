@@ -19,7 +19,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends software-properties-common curl
           
           # Installe la version correcte de la librairie pour résoudre la dépendance de nsight-systems
-          sudo apt-get install -y libncurses6 libtinfo6 libncurses5
+          sudo apt-get install -y libncurses6 libtinfo6 libncurses6
           
           # Ajoute le repository de NVIDIA
           curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-cuda-keyring.gpg
