@@ -27,7 +27,7 @@ jobs:
           
           # Installe le toolkit CUDA (ajustez la version si nécessaire)
           sudo apt-get update
-          sudo apt-get install -y cuda-toolkit-12-4
+          sudo apt-get install -y --no-install-recommends cuda-toolkit-12-4
           
           # Installe Cog (via le script d'installation officiel)
           curl -fsSL https://cog.run/install.sh | sudo sh
