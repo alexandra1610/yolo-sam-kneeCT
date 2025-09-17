@@ -1,0 +1,20 @@
+name: Cog Push
+on:
+  push:
+    branches: [ main ]
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: replicate/setup-cog@v1
+
+      - name: Login to Replicate
+        run: replicate auth login --token "${{ secrets.REPLICATE_API_TOKEN }}"
+
+      - name: Push model image to r8.im
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: cog push r8.im/alexandra1610/sam-vit-h-box
+
