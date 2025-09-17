@@ -12,11 +12,15 @@ jobs:
       - uses: actions/checkout@v4
       
       # Installation manuelle de CUDA et Cog
-      - name: Install CUDA and Cog
+      - name: Install CUDA, Cog, and dependencies
         run: |
           # Installe les dépendances nécessaires pour CUDA
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends software-properties-common curl
+          
+          # Résout le problème de dépendance pour nsight-systems
+          # libtinfo5 n'est pas disponible par défaut sur Ubuntu 22.04
+          sudo apt-get install -y libncurses5
           
           # Ajoute le repository de NVIDIA
           curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-cuda-keyring.gpg
