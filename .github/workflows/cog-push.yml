@@ -3,18 +3,35 @@ name: Cog Push
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # permet de lancer à la main depuis l’onglet Actions
+  workflow_dispatch:
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: replicate/setup-cog@v2
-        with:
-          install-cuda: true
-          token: ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
+      
+      # Installation manuelle de CUDA et Cog
+      - name: Install CUDA and Cog
+        run: |
+          # Installe les dépendances nécessaires pour CUDA
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends software-properties-common curl
+          
+          # Ajoute le repository de NVIDIA
+          curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-cuda-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/nvidia-cuda-keyring.gpg] https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /" | sudo tee /etc/apt/sources.list.d/nvidia-cuda.list > /dev/null
+          
+          # Installe le toolkit CUDA (ajustez la version si nécessaire)
+          sudo apt-get update
+          sudo apt-get install -y cuda-toolkit-12-4
+          
+          # Installe Cog (via le script d'installation officiel)
+          curl -fsSL https://cog.run/install.sh | sudo sh
+      
+      # Vous devez également vous connecter à Replicate si vous utilisez un jeton
+      - name: Login to Replicate
+        run: cog login --token ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
 
       - name: Push model image to r8.im
         env:
