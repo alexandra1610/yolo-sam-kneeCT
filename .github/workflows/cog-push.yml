@@ -1,13 +1,22 @@
 name: Cog Push
+
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:   # permet de lancer à la main depuis l’onglet Actions
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: replicate/setup-cog@v1
+        with:
+          # optionnel: tu peux forcer une version de Cog
+          # cog-version: "0.9.9"
+          # si tu as des erreurs de cache, tu peux ajouter :
+          # use-tool-cache: false
 
       - name: Login to Replicate
         run: replicate auth login --token "${{ secrets.REPLICATE_API_TOKEN }}"
@@ -17,4 +26,3 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
         run: cog push r8.im/alexandra1610/sam-vit-h-box
-
