@@ -15,6 +15,7 @@ jobs:
       - name: Install CUDA, Cog, and dependencies
         run: |
           # Installe les dépendances nécessaires pour CUDA
+          export NEEDRESTART_MODE=a
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends software-properties-common curl
           
