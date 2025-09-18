@@ -7,33 +7,13 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04   # <--- plus stable que ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      # Installation manuelle de CUDA et Cog
-      - name: Install CUDA, Cog, and dependencies
-        run: |
-          # Installe les dépendances nécessaires pour CUDA
-          export NEEDRESTART_MODE=a
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends software-properties-common curl
-          
-          # Installe la version correcte de la librairie pour résoudre la dépendance de nsight-systems
-          sudo apt-get install -y libncurses5 libtinfo5
-          
-          # Ajoute le repository de NVIDIA
-          curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-cuda-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/nvidia-cuda-keyring.gpg] https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /" | sudo tee /etc/apt/sources.list.d/nvidia-cuda.list > /dev/null
-          
-          # Installe le toolkit CUDA (ajustez la version si nécessaire)
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cuda-toolkit-12-4
-          
-          # Installe Cog (via le script d'installation officiel)
-          curl -fsSL https://cog.run/install.sh | sudo sh
-      
-      # Vous devez également vous connecter à Replicate si vous utilisez un jeton
+
+      - name: Install Cog
+        run: curl -fsSL https://cog.run/install.sh | sudo sh
+
       - name: Login to Replicate
         run: cog login --token ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
 
@@ -41,5 +21,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
-        run:  |
-          cog push r8.im/alexandra1610/sam-vit-h-box
+        run: cog push r8.im/alexandra1610/sam-vit-h-box
