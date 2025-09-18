@@ -13,10 +13,10 @@ jobs:
 
       - name: Install Cog
         run: |
-          sudo apt-get update
-          sudo apt-get install -y golang-go
-          go install github.com/replicate/cog@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          curl -L https://github.com/replicate/cog/releases/latest/download/cog_Linux_x86_64.tar.gz -o cog.tar.gz
+          tar -xzf cog.tar.gz
+          sudo mv cog /usr/local/bin/
+
 
 
       - name: Login to Replicate
