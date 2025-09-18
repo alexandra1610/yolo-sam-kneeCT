@@ -6,36 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-22.04
+  push_to_replicate:
+    name: Push to Replicate
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          docker-images: false
+
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Cog and dependencies
-        run: |
-          # Télécharge la dernière version de Cog depuis la bonne URL
-          curl -L "https://github.com/replicate/cog/releases/latest/download/cog_Linux_x86_64.tar.gz" -o cog.tar.gz
-          
-          # Vérifie que le fichier est bien un fichier gzip avant de le décompresser
-          file_type=$(file -b cog.tar.gz)
-          if [[ "$file_type" != *"gzip compressed data"* ]]; then
-            echo "Erreur: Le fichier téléchargé n'est pas un fichier gzip valide."
-            exit 1
-          fi
+      - name: Setup Cog
+        uses: replicate/setup-cog@v2
+        with:
+          token: ${{ secrets.REPLICATE_API_TOKEN }}
 
-          # Décompresse le fichier et déplace l'exécutable
-          tar -xzf cog.tar.gz
-          sudo mv cog /usr/local/bin/
-
-          # Installe les dépendances nécessaires pour Cog, si besoin
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip
-
-      - name: Log in to Replicate
-        run: cog login --token ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
-
-      - name: Push model image to r8.im
+      - name: Push to Replicate
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
         run: cog push r8.im/alexandra1610/sam-vit-h-box
