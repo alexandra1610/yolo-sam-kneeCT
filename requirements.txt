@@ -1,7 +1,7 @@
 torch
 torchvision
 onnxruntime
-opencv-python
+opencv-python-headless
 numpy
 pillow
 huggingface_hub>=0.21.0
