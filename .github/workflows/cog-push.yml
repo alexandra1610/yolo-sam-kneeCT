@@ -28,4 +28,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: cog push r8.im/alexandra1610/sam-vit-h-box
+        run: cog push r8.im/alexandra1610/yolo-sam-kneect

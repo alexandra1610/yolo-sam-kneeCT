@@ -1,90 +1,161 @@
-import os
-import numpy as np
-import cv2
-import torch
-import onnxruntime as ort
-from huggingface_hub import snapshot_download
+import os, cv2, numpy as np, yaml
+import torch, onnxruntime as ort
+from huggingface_hub import snapshot_download, hf_hub_download
 from cog import BasePredictor, Input, Path
 from segment_anything import sam_model_registry, SamPredictor
 
-HF_REPO   = "alexa1610/vit-h-onnx"
-PTH_FILE  = "sam_vit_h_4b8939.pth"
-ONNX_FILE = "sam_onnx_example.onnx"
+HF_REPO    = "alexa1610/vit-h-onnx"
+SAM_PTH    = "sam_vit_h_4b8939.pth"
+SAM_ONNX   = "sam_onnx_example.onnx"
+YOLO_ONNX  = "yolov11_kneeCT.onnx"
+YOLO_DATA  = "yolo_classes.yaml"   
 MODEL_TYPE = "vit_h"
 
 def _providers():
-    return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CUDAExecutionProvider"]  # forcé GPU
+
 
 class Predictor(BasePredictor):
     def setup(self):
-        # Télécharge tous les assets depuis HF (lit HF_TOKEN si repo privé/gated)
         repo_dir  = snapshot_download(repo_id=HF_REPO)
-        ckpt_path = os.path.join(repo_dir, PTH_FILE)
-        onnx_path = os.path.join(repo_dir, ONNX_FILE)
+        sam_ckpt  = os.path.join(repo_dir, SAM_PTH)
+        sam_onnx  = os.path.join(repo_dir, SAM_ONNX)
+        yolo_onnx = os.path.join(repo_dir, YOLO_ONNX)
+        data_yaml = os.path.join(repo_dir, YOLO_DATA)
 
-        # SAM (torch) pour embeddings
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        sam = sam_model_registry[MODEL_TYPE](checkpoint=ckpt_path)
-        sam.to(device=device)
+        # SAM Torch (embeddings)
+        sam = sam_model_registry[MODEL_TYPE](checkpoint=sam_ckpt)
+        sam.to(device="cuda")
         sam.eval()
         self.predictor = SamPredictor(sam)
-        self.device = device
 
-        # ONNX Runtime (tête de prédiction)
-        self.sess = ort.InferenceSession(
-            onnx_path,
-            providers=_providers()
-        )
-        self.input_names  = [i.name for i in self.sess.get_inputs()]
-        self.output_names = [o.name for o in self.sess.get_outputs()]
+        # SAM ONNX
+        self.sam_sess = ort.InferenceSession(sam_onnx, providers=_providers())
 
-        # Noms attendus par l’export SAM ONNX “classique”
-        self.expected_inputs = [
-            "image_embeddings", "point_coords", "point_labels",
-            "mask_input", "has_mask_input", "orig_im_size"
-        ]
+        # YOLO ONNX
+        self.yolo_sess = ort.InferenceSession(yolo_onnx, providers=_providers())
+        self.yolo_input = self.yolo_sess.get_inputs()[0].name
+        self.yolo_output = [o.name for o in self.yolo_sess.get_outputs()]
+
+        # Charger les classes depuis data.yaml
+        with open(data_yaml, "r") as f:
+            data_cfg = yaml.safe_load(f)
+        self.class_names = data_cfg["names"]
+
+        self.class_colors = {
+            0: (0, 255, 0),   # tibia = vert
+            1: (255, 0, 0),   # femur = bleu
+            2: (0, 0, 255),   # prothèse = rouge
+            3: (255, 255, 0), # fibula = jaune
+            4: (255, 0, 255)  # patella = magenta
+        }
+
+        # Prothèse > reste (si existe)
+        self.class_priority = {
+            i: (10 if "prosthesis" in name.lower() else 1)
+            for i, name in self.class_names.items()
+        }
 
     def predict(
         self,
-        image: Path = Input(description="Image d'entrée (PNG/JPG)"),
-        box: str = Input(description="Bounding box: x0,y0,x1,y1"),
+        images: list[Path] = Input(description="Liste d'images CT (PNG/JPG)"),
     ) -> Path:
-        # Lecture image
-        img_bgr = cv2.imread(str(image))
-        if img_bgr is None:
-            raise ValueError("Impossible de lire l'image.")
-        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        images = sorted(images, key=lambda x: str(x))
+        frames = []
 
-        # Embeddings
-        self.predictor.set_image(img_rgb)
-        image_embedding = self.predictor.get_image_embedding().cpu().numpy()  # (1,256,64,64)
+        for image in images:
+            img_bgr = cv2.imread(str(image))
+            if img_bgr is None:
+                continue
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-        # Parse la box
-        try:
-            x0, y0, x1, y1 = map(int, box.split(","))
-        except Exception:
-            raise ValueError("Format attendu pour 'box' : x0,y0,x1,y1")
-        input_box = np.array([x0, y0, x1, y1], dtype=np.float32)
-        coords = input_box.reshape(2, 2)[None, :, :]                   # (1,2,2)
+            # YOLO
+            boxes = self.run_yolo(img_rgb)
+
+            # SAM
+            overlay = np.zeros_like(img_rgb, dtype=np.uint8)
+            self.predictor.set_image(img_rgb)
+            image_embedding = self.predictor.get_image_embedding().cpu().numpy()
+
+            mask_layers = []
+            for box, cls in boxes:
+                sam_mask = self.run_sam(img_rgb, image_embedding, box)
+                if sam_mask is not None:
+                    mask_layers.append((
+                        sam_mask,
+                        self.class_colors.get(cls, (255,255,255)),
+                        self.class_priority.get(cls, 1)
+                    ))
+
+            combined = self.fuse_masks(img_rgb, mask_layers)
+            frames.append(combined)
+
+        out_path = "/tmp/segmentation.mp4"
+        self.save_video(frames, out_path)
+        return Path(out_path)
+
+    def run_yolo(self, img_rgb):
+        h, w = img_rgb.shape[:2]
+        img_resized = cv2.resize(img_rgb, (640, 640))
+        inp = img_resized.transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+        preds = self.yolo_sess.run(self.yolo_output, {self.yolo_input: inp})[0]
+
+        boxes = []
+        for det in preds:  # (x,y,w,h,conf,cls)
+            x, y, bw, bh, conf, cls = det
+            if conf < 0.4:
+                continue
+            x0 = int((x - bw/2) * w / 640)
+            y0 = int((y - bh/2) * h / 640)
+            x1 = int((x + bw/2) * w / 640)
+            y1 = int((y + bh/2) * h / 640)
+            boxes.append(((x0, y0, x1, y1), int(cls)))
+        return boxes
+
+    def run_sam(self, img_rgb, image_embedding, box):
+        x0, y0, x1, y1 = box
+        coords = np.array([[ [x0,y0], [x1,y1] ]], dtype=np.float32)
         coords = self.predictor.transform.apply_coords(coords, img_rgb.shape[:2]).astype(np.float32)
         labels = np.array([[2, 3]], dtype=np.float32)
-
-        # Prépare les entrées ONNX
         ort_inputs = {
             "image_embeddings": image_embedding,
             "point_coords": coords,
             "point_labels": labels,
-            "mask_input": np.zeros((1, 1, 256, 256), dtype=np.float32),
+            "mask_input": np.zeros((1,1,256,256), dtype=np.float32),
             "has_mask_input": np.array([0], dtype=np.float32),
-            "orig_im_size": np.array(img_rgb.shape[:2], dtype=np.float32),  # (H,W)
+            "orig_im_size": np.array(img_rgb.shape[:2], dtype=np.float32),
         }
+        try:
+            masks, _, _ = self.sam_sess.run(None, ort_inputs)
+            mask = (masks[0, 0] > self.predictor.model.mask_threshold).astype(np.uint8)
+            return mask
+        except Exception:
+            return None
 
-        # Exécution (None = tous les outputs dans l'ordre du graph)
-        masks, iou_scores, low_res = self.sess.run(None, ort_inputs)
+    def fuse_masks(self, img_rgb, mask_layers):
+        h, w, _ = img_rgb.shape
+        label_map = np.zeros((h, w), dtype=np.int32)
 
-        # Binarisation
-        mask = (masks[0, 0] > self.predictor.model.mask_threshold).astype(np.uint8) * 255
+        # trier par priorité (les plus importants en dernier)
+        mask_layers.sort(key=lambda x: x[2])
 
-        out_path = "/tmp/mask.png"
-        cv2.imwrite(out_path, mask)
-        return Path(out_path)
+        for mask, color, priority, cls_id in mask_layers:
+            label_map[mask > 0] = cls_id + 1  # +1 pour garder 0 = background
+
+        out_img = np.zeros_like(img_rgb)
+        for cid, name in self.class_names.items():
+            col = self.class_colors.get(cid, (255,255,255))
+            out_img[label_map == cid + 1] = col
+
+        return out_img
+
+
+
+    def save_video(self, frames, path):
+        if not frames:
+            return
+        h, w, _ = frames[0].shape
+        writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 5, (w, h))
+        for f in frames:
+            writer.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
+        writer.release()
