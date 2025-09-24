@@ -98,19 +98,28 @@ class Predictor(BasePredictor):
         h, w = img_rgb.shape[:2]
         img_resized = cv2.resize(img_rgb, (640, 640))
         inp = img_resized.transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+
         preds = self.yolo_sess.run(self.yolo_output, {self.yolo_input: inp})[0]
 
         boxes = []
-        for det in preds:  # (x,y,w,h,conf,cls)
-            x, y, bw, bh, conf, cls = det
-            if conf < 0.4:
+        for det in preds:
+            x, y, bw, bh, obj_conf = det[:5]                # 5 premières valeurs
+            class_probs = det[5:]                           # reste = distribution sur tes 5 classes
+            cls_id = np.argmax(class_probs)                 # classe la plus probable
+            cls_conf = class_probs[cls_id] * obj_conf       # confiance finale
+
+            if cls_conf < 0.4:  # seuil de confiance
                 continue
-            x0 = int((x - bw/2) * w / 640)
-            y0 = int((y - bh/2) * h / 640)
-            x1 = int((x + bw/2) * w / 640)
-            y1 = int((y + bh/2) * h / 640)
-            boxes.append(((x0, y0, x1, y1), int(cls)))
+
+            # remettre à l’échelle
+            x0 = int((x - bw / 2) * w / 640)
+            y0 = int((y - bh / 2) * h / 640)
+            x1 = int((x + bw / 2) * w / 640)
+            y1 = int((y + bh / 2) * h / 640)
+            boxes.append(((x0, y0, x1, y1), cls_id))
+
         return boxes
+
 
     def run_sam(self, img_rgb, image_embedding, box):
         x0, y0, x1, y1 = box
