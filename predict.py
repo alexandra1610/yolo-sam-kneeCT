@@ -1,4 +1,4 @@
-import os, cv2, numpy as np, yaml
+import os, cv2, numpy as np
 import torch, onnxruntime as ort
 from huggingface_hub import snapshot_download, hf_hub_download
 from cog import BasePredictor, Input, Path
@@ -76,7 +76,7 @@ class Predictor(BasePredictor):
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
             # YOLO
-            self.model = YOLO(model_path)
+            self.model = YOLO(YOLO_ONNX)
             boxes = self.run_yolo(img_rgb)
 
             # SAM
