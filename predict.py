@@ -3,12 +3,13 @@ import torch, onnxruntime as ort
 from huggingface_hub import snapshot_download, hf_hub_download
 from cog import BasePredictor, Input, Path
 from segment_anything import sam_model_registry, SamPredictor
+from ultralytics import YOLO
+
 
 HF_REPO    = "alexa1610/vit-h-onnx"
 SAM_PTH    = "sam_vit_h_4b8939.pth"
 SAM_ONNX   = "sam_onnx_example.onnx"
 YOLO_ONNX  = "yolov11_kneeCT.onnx"
-YOLO_DATA  = "yolo_classes.yaml"   
 MODEL_TYPE = "vit_h"
 
 def _providers():
@@ -21,7 +22,6 @@ class Predictor(BasePredictor):
         sam_ckpt  = os.path.join(repo_dir, SAM_PTH)
         sam_onnx  = os.path.join(repo_dir, SAM_ONNX)
         yolo_onnx = os.path.join(repo_dir, YOLO_ONNX)
-        data_yaml = os.path.join(repo_dir, YOLO_DATA)
 
         # SAM Torch (embeddings)
         sam = sam_model_registry[MODEL_TYPE](checkpoint=sam_ckpt)
@@ -37,18 +37,24 @@ class Predictor(BasePredictor):
         self.yolo_input = self.yolo_sess.get_inputs()[0].name
         self.yolo_output = [o.name for o in self.yolo_sess.get_outputs()]
 
-        # Charger les classes depuis data.yaml
-        with open(data_yaml, "r") as f:
-            data_cfg = yaml.safe_load(f)
-        self.class_names = data_cfg["names"]
+        # Charger les classes 
+        self.class_names = {
+            0: "femur",
+            1: "fibula",
+            2: "patella",
+            3: "prosthesis",
+            4: "tibia"
+        }
+
 
         self.class_colors = {
-            0: (0, 255, 0),   # tibia = vert
-            1: (255, 0, 0),   # femur = bleu
-            2: (0, 0, 255),   # prothèse = rouge
-            3: (255, 255, 0), # fibula = jaune
-            4: (255, 0, 255)  # patella = magenta
+            0: (0, 255, 0),    # femur
+            1: (255, 0, 0),    # fibula
+            2: (0, 0, 255),    # patella
+            3: (255, 255, 0),  # prosthesis
+            4: (255, 0, 255)   # tibia
         }
+
 
         # Prothèse > reste (si existe)
         self.class_priority = {
@@ -70,6 +76,7 @@ class Predictor(BasePredictor):
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
             # YOLO
+            self.model = YOLO(model_path)
             boxes = self.run_yolo(img_rgb)
 
             # SAM
@@ -94,29 +101,23 @@ class Predictor(BasePredictor):
         self.save_video(frames, out_path)
         return Path(out_path)
 
-    def run_yolo(self, img_rgb):
-        h, w = img_rgb.shape[:2]
-        img_resized = cv2.resize(img_rgb, (640, 640))
-        inp = img_resized.transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+    def run_yolo(self, img_rgb, conf_thres=0.4):
 
-        preds = self.yolo_sess.run(self.yolo_output, {self.yolo_input: inp})[0]
+        # Prédiction (pas de show=True pour éviter l'ouverture de fenêtre)
+        results = self.model.predict(
+            source=img_rgb,   # peut être un tableau numpy directement
+            imgsz=640,
+            conf=conf_thres,
+            save=False,
+            show=False
+        )
 
         boxes = []
-        for det in preds:
-            x, y, bw, bh, obj_conf = det[:5]                # 5 premières valeurs
-            class_probs = det[5:]                           # reste = distribution sur tes 5 classes
-            cls_id = np.argmax(class_probs)                 # classe la plus probable
-            cls_conf = class_probs[cls_id] * obj_conf       # confiance finale
-
-            if cls_conf < 0.4:  # seuil de confiance
-                continue
-
-            # remettre à l’échelle
-            x0 = int((x - bw / 2) * w / 640)
-            y0 = int((y - bh / 2) * h / 640)
-            x1 = int((x + bw / 2) * w / 640)
-            y1 = int((y + bh / 2) * h / 640)
-            boxes.append(((x0, y0, x1, y1), cls_id))
+        for r in results:
+            for box, cls in zip(r.boxes.xyxy, r.boxes.cls):
+                x0, y0, x1, y1 = map(int, box.tolist())
+                cls_id = int(cls.item())
+                boxes.append(((x0, y0, x1, y1), cls_id))
 
         return boxes
 

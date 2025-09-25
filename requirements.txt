@@ -7,3 +7,4 @@ pillow
 huggingface_hub>=0.21.0
 onnxruntime-gpu
 segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
+ultralytics>=8.2.0
