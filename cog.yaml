@@ -2,6 +2,7 @@ build:
   gpu: true
   python_version: "3.9"
   python_requirements: requirements.txt
-
+  system_packages:
+    - libgl1
 predict: "predict.py:Predictor"
 
