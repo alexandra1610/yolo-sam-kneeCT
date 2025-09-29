@@ -89,7 +89,8 @@ class Predictor(BasePredictor):
                     mask_layers.append((
                         sam_mask,
                         self.class_colors.get(cls, (255,255,255)),
-                        self.class_priority.get(cls, 1)
+                        self.class_priority.get(cls, 1),
+                        cls
                     ))
 
             combined = self.fuse_masks(img_rgb, mask_layers)
