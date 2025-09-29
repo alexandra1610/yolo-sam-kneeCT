@@ -33,9 +33,7 @@ class Predictor(BasePredictor):
         self.sam_sess = ort.InferenceSession(sam_onnx, providers=_providers())
 
         # YOLO ONNX
-        self.yolo_sess = ort.InferenceSession(yolo_onnx, providers=_providers())
-        self.yolo_input = self.yolo_sess.get_inputs()[0].name
-        self.yolo_output = [o.name for o in self.yolo_sess.get_outputs()]
+        self.yolo_model_path = yolo_onnx
 
         # Charger les classes 
         self.class_names = {
@@ -76,7 +74,7 @@ class Predictor(BasePredictor):
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
             # YOLO
-            self.model = YOLO(YOLO_ONNX)
+            self.model = YOLO(self.yolo_model_path)
             boxes = self.run_yolo(img_rgb)
 
             # SAM
