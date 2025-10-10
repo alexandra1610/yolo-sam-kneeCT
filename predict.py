@@ -34,6 +34,7 @@ class Predictor(BasePredictor):
 
         # YOLO ONNX
         self.yolo_model_path = yolo_onnx
+        self.yolo_model = YOLO(yolo_onnx)
 
         # Charger les classes 
         self.class_names = {
@@ -73,7 +74,7 @@ class Predictor(BasePredictor):
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
             # YOLO
-            self.model = YOLO(self.yolo_model_path)
+            
             boxes = self.run_yolo(img_rgb)
 
             # SAM
@@ -102,7 +103,7 @@ class Predictor(BasePredictor):
     def run_yolo(self, img_rgb, conf_thres=0.4):
 
         # Prédiction (pas de show=True pour éviter l'ouverture de fenêtre)
-        results = self.model.predict(
+        results = self.yolo_model.predict(
             source=img_rgb,   # peut être un tableau numpy directement
             imgsz=640,
             conf=conf_thres,
@@ -122,30 +123,30 @@ class Predictor(BasePredictor):
 
     def run_sam(self, img_rgb, image_embedding, box):
         x0, y0, x1, y1 = box
-        coords = np.array([[ [x0,y0], [x1,y1] ]], dtype=np.float32)
-        coords = self.predictor.transform.apply_coords(coords, img_rgb.shape[:2]).astype(np.float32)
+
+        coords = np.array([[[x0, y0], [x1, y1]]], dtype=np.float32)
         labels = np.array([[2, 3]], dtype=np.float32)
+        coords = self.predictor.transform.apply_coords(coords, img_rgb.shape[:2]).astype(np.float32)
         ort_inputs = {
             "image_embeddings": image_embedding,
             "point_coords": coords,
             "point_labels": labels,
-            "mask_input": np.zeros((1,1,256,256), dtype=np.float32),
+            "mask_input": np.zeros((1, 1, 256, 256), dtype=np.float32),
             "has_mask_input": np.array([0], dtype=np.float32),
             "orig_im_size": np.array(img_rgb.shape[:2], dtype=np.float32),
         }
-        try:
-            masks, _, _ = self.sam_sess.run(None, ort_inputs)
-            mask = (masks[0, 0] > self.predictor.model.mask_threshold).astype(np.uint8)
-            return mask
-        except Exception:
-            return None
+        masks, _, _ = self.sam_sess.run(None, ort_inputs)
+        mask = (masks[0, 0] > self.predictor.model.mask_threshold).astype(np.uint8)
+        return mask
+
+
 
     def fuse_masks(self, img_rgb, mask_layers):
         h, w, _ = img_rgb.shape
         label_map = np.zeros((h, w), dtype=np.int32)
 
-        # trier par priorité (les plus importants en dernier)
         mask_layers.sort(key=lambda x: x[2])
+
 
         for mask, color, priority, cls_id in mask_layers:
             label_map[mask > 0] = cls_id + 1  # +1 pour garder 0 = background
