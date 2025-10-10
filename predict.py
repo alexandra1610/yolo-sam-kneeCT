@@ -64,7 +64,6 @@ class Predictor(BasePredictor):
         self,
         images: list[Path] = Input(description="Liste d'images CT (PNG/JPG)"),
     ) -> Path:
-        images = sorted(images, key=lambda x: str(x))
         frames = []
 
         for image in images:
